@@ -55,6 +55,9 @@ let currentView = "all";
 let sleepTimerId = null;
 let sleepEndTime = null;
 let userAddedSongs = []; // blob URLs from file picker
+let pendingFiles = [];
+let pendingFileIndex = 0;
+let customPlaylists = JSON.parse(localStorage.getItem("customPlaylists") || "[]");
 
 /* ========== DOM ========== */
 const audio = document.getElementById("audio");
@@ -75,12 +78,18 @@ const addSongsBtn = document.getElementById("add-songs-btn");
 const vinyl = document.getElementById("vinyl");
 
 /* ========== INIT ========== */
-function init() {
-  // Theme
+async function init() {
   const savedTheme = localStorage.getItem("theme") || "dark";
   document.body.classList.toggle("light", savedTheme === "light");
   document.body.classList.toggle("dark", savedTheme === "dark");
 
+  // Load saved custom songs
+  const saved = await loadSongsFromDB();
+  if (saved.length) {
+    songs = [...DEFAULT_SONGS, ...saved];
+  }
+
+  updateSidebarPlaylists();
   renderSongs();
   updateStorageUI();
   bindEvents();
@@ -99,6 +108,9 @@ function getFilteredSongs() {
   } else if (currentFilter === "recent") {
     list = list.filter(s => recent.includes(s.id)).sort((a, b) => recent.indexOf(a.id) - recent.indexOf(b.id));
   }
+  else if (currentView === "custom" && currentFilter) {
+  list = list.filter(s => s.artist === currentFilter);
+}
 
   const q = searchInput.value.trim().toLowerCase();
   if (q) {
@@ -401,29 +413,201 @@ function updateTimerStatusUI() {
 
 /* ========== ADD SONGS (File Picker) ========== */
 function handleFiles(files) {
-  Array.from(files).forEach(file => {
-    if (!file.type.includes("audio")) return;
-    const url = URL.createObjectURL(file);
-    const id = Date.now() + Math.random();
-    const song = {
-      id,
-      title: file.name.replace(/\.mp3$/i, ""),
-      artist: "Added by you",
-      category: "Custom",
-      src: url,
-      album: "Local file"
-    };
-    songs.push(song);
-    userAddedSongs.push(url);
-  });
-  updateStorageUI();
-  renderSongs();
+  pendingFiles = Array.from(files).filter(f =>
+    f.type.includes("audio") || f.name.toLowerCase().endsWith(".mp3")
+  );
+  if (pendingFiles.length === 0) {
+    alert("Please select only MP3 files");
+    return;
+  }
+  pendingFileIndex = 0;
+  showAddSongDialog();
 }
 
-function updateStorageUI() {
-  const pct = Math.min(100, (songs.length / 25) * 100);
-  document.getElementById("storage-fill").style.width = pct + "%";
-  document.getElementById("track-count").textContent = songs.length;
+function showAddSongDialog() {
+  if (pendingFileIndex >= pendingFiles.length) {
+    pendingFiles = [];
+    pendingFileIndex = 0;
+    return;
+  }
+  /* ===== IndexedDB – save songs permanently ===== */
+function openSongDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("MusicLibraryDB", 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("songs")) {
+        db.createObjectStore("songs", { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveSongToDB(song, blob) {
+  const db = await openSongDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("songs", "readwrite");
+    tx.objectStore("songs").put({ ...song, blob });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadSongsFromDB() {
+  try {
+    const db = await openSongDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction("songs", "readonly");
+      const req = tx.objectStore("songs").getAll();
+      req.onsuccess = () => {
+        const rows = req.result || [];
+        const loaded = rows.map(row => {
+          const url = URL.createObjectURL(row.blob);
+          return {
+            id: row.id,
+            title: row.title,
+            artist: row.artist,
+            category: row.category,
+            album: row.album,
+            src: url,
+            isCustom: true
+          };
+        });
+        resolve(loaded);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch (e) {
+    console.warn(e);
+    return [];
+  }
+}
+
+async function confirmAddSong() {
+  if (pendingFileIndex >= pendingFiles.length) return;
+
+  const file = pendingFiles[pendingFileIndex];
+  const destination = document.getElementById("add-destination")?.value || "all";
+  const category = document.getElementById("add-category")?.value || "Hindi";
+  const nameInput = document.getElementById("new-playlist-name");
+  const err = document.getElementById("playlist-error");
+
+  let artist = "Manya's Playlist";
+  let album = "Added by you";
+
+  if (destination === "new") {
+    const playlistName = (nameInput?.value || "").trim();
+    if (!playlistName) {
+      if (err) {
+        err.textContent = "Please enter a playlist name";
+        err.classList.remove("hidden");
+      }
+      return;
+    }
+    if (customPlaylists.includes(playlistName) || playlistName === "Manya's Playlist") {
+      if (err) {
+        err.textContent = "Playlist already exists. Choose another name.";
+        err.classList.remove("hidden");
+      }
+      return;
+    }
+    customPlaylists.push(playlistName);
+    localStorage.setItem("customPlaylists", JSON.stringify(customPlaylists));
+    artist = playlistName;
+    album = playlistName;
+    updateSidebarPlaylists();
+  }
+
+  const id = Date.now() + Math.random();
+  const url = URL.createObjectURL(file);
+
+  const newSong = {
+    id,
+    title: file.name.replace(/\.mp3$/i, ""),
+    artist,
+    category,
+    src: url,
+    album,
+    isCustom: true
+  };
+
+  songs.push(newSong); // bottom of list
+
+  try {
+    await saveSongToDB(newSong, file);
+  } catch (e) {
+    console.warn("Could not save to IndexedDB", e);
+  }
+
+  document.getElementById("add-song-modal")?.classList.add("hidden");
+  updateStorageUI();
+  renderSongs();
+
+  // next file (one dialog per song)
+  pendingFileIndex++;
+  if (pendingFileIndex < pendingFiles.length) {
+    setTimeout(showAddSongDialog, 200);
+  } else {
+    pendingFiles = [];
+    pendingFileIndex = 0;
+  }
+}
+
+function updateSidebarPlaylists() {
+  const nav = document.querySelector(".nav");
+  if (!nav) return;
+
+  nav.querySelectorAll(".nav-item.custom-playlist").forEach(el => el.remove());
+
+  customPlaylists.forEach(name => {
+    const btn = document.createElement("button");
+    btn.className = "nav-item custom-playlist";
+    btn.dataset.view = "custom";
+    btn.dataset.playlist = name;
+    btn.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>
+        <path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/>
+      </svg>
+      ${name}
+    `;
+    btn.addEventListener("click", () => {
+      currentView = "custom";
+      currentFilter = name;
+      document.querySelectorAll(".nav-item[data-view]").forEach(i => i.classList.remove("active"));
+      btn.classList.add("active");
+      const title = document.getElementById("view-title");
+      if (title) title.textContent = name;
+      listView?.classList.remove("hidden");
+      nowplayingView?.classList.add("hidden");
+      renderSongs();
+    });
+    const addBtn = document.getElementById("add-songs-btn");
+    if (addBtn) nav.insertBefore(btn, addBtn);
+    else nav.appendChild(btn);
+  });
+}
+  const file = pendingFiles[pendingFileIndex];
+  const filenameEl = document.getElementById("add-song-filename");
+  const modal = document.getElementById("add-song-modal");
+  const dest = document.getElementById("add-destination");
+  const nameWrap = document.getElementById("playlist-name-wrap");
+  const nameInput = document.getElementById("new-playlist-name");
+  const err = document.getElementById("playlist-error");
+
+  if (filenameEl) {
+    filenameEl.textContent = file.name + (pendingFiles.length > 1 ? ` (${pendingFileIndex + 1}/${pendingFiles.length})` : "");
+  }
+  if (dest) dest.value = "all";
+  if (nameWrap) nameWrap.classList.add("hidden");
+  if (nameInput) nameInput.value = "";
+  if (err) {
+    err.classList.add("hidden");
+    err.textContent = "";
+  }
+  if (modal) modal.classList.remove("hidden");
 }
 
 /* ========== PROGRESS ========== */
@@ -557,6 +741,31 @@ miniPlayer.addEventListener("click", (e) => {
   // Don't open if user clicked the play/prev/next buttons
   if (e.target.closest(".mini-btn")) return;
   setView("nowplaying");
+});// Show / hide playlist name input
+document.getElementById("add-destination")?.addEventListener("change", (e) => {
+  const wrap = document.getElementById("playlist-name-wrap");
+  if (!wrap) return;
+  if (e.target.value === "new") wrap.classList.remove("hidden");
+  else wrap.classList.add("hidden");
+});
+
+// Close dialog
+document.getElementById("add-song-close")?.addEventListener("click", () => {
+  document.getElementById("add-song-modal")?.classList.add("hidden");
+  pendingFiles = [];
+  pendingFileIndex = 0;
+});
+
+// Confirm button
+document.getElementById("confirm-add-song")?.addEventListener("click", confirmAddSong);
+
+// Click outside dialog to close
+document.getElementById("add-song-modal")?.addEventListener("click", (e) => {
+  if (e.target.id === "add-song-modal") {
+    e.target.classList.add("hidden");
+    pendingFiles = [];
+    pendingFileIndex = 0;
+  }
 });
 }
 
