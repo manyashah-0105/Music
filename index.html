@@ -360,6 +360,45 @@
 
   <!-- AUDIO ELEMENT -->
   <audio id="audio" preload="metadata"></audio>
+  <!-- ADD SONG DIALOG -->
+<div class="modal-overlay hidden" id="add-song-modal">
+  <div class="modal" style="max-width: 420px;">
+    <div class="modal-header">
+      <h3>Add Song</h3>
+      <button class="modal-close" id="add-song-close" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px;" id="add-song-filename"></p>
+
+    <label style="font-size:13px; display:block; margin-bottom:6px;">Add to</label>
+    <select id="add-destination" style="width:100%; padding:10px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border); color:var(--text-primary); margin-bottom:12px;">
+      <option value="all">All Tracks</option>
+      <option value="new">Create new playlist</option>
+    </select>
+
+    <div id="playlist-name-wrap" class="hidden" style="margin-bottom:12px;">
+      <label style="font-size:13px; display:block; margin-bottom:6px;">Playlist name</label>
+      <input type="text" id="new-playlist-name" placeholder="e.g. Morning Vibes" style="width:100%; padding:10px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border); color:var(--text-primary);" />
+      <p id="playlist-error" class="hidden" style="color:#ff4d6d; font-size:12px; margin-top:6px;"></p>
+    </div>
+
+    <label style="font-size:13px; display:block; margin-bottom:6px;">Category / Type</label>
+    <select id="add-category" style="width:100%; padding:10px; border-radius:8px; background:var(--bg-tertiary); border:1px solid var(--border); color:var(--text-primary); margin-bottom:20px;">
+      <option value="Hindi">Hindi</option>
+      <option value="Gujarati">Gujarati</option>
+      <option value="Devotional">Devotional</option>
+      <option value="Phonk">Phonk</option>
+      <option value="English">English</option>
+    </select>
+
+    <button class="timer-opt primary" id="confirm-add-song" type="button" style="width:100%;">Add Song</button>
+  </div>
+</div>
 
   <script src="js/script.js"></script>
 </body>
