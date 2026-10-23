@@ -55,9 +55,7 @@ let currentView = "all";
 let sleepTimerId = null;
 let sleepEndTime = null;
 let userAddedSongs = []; // blob URLs from file picker
-let pendingFiles = [];
-let pendingFileIndex = 0;
-let customPlaylists = JSON.parse(localStorage.getItem("customPlaylists") || "[]");
+
 
 /* ========== DOM ========== */
 const audio = document.getElementById("audio");
@@ -78,18 +76,12 @@ const addSongsBtn = document.getElementById("add-songs-btn");
 const vinyl = document.getElementById("vinyl");
 
 /* ========== INIT ========== */
-async function init() {
+function init() {
+  // Theme
   const savedTheme = localStorage.getItem("theme") || "dark";
   document.body.classList.toggle("light", savedTheme === "light");
   document.body.classList.toggle("dark", savedTheme === "dark");
 
-  // Load saved custom songs
-  const saved = await loadSongsFromDB();
-  if (saved.length) {
-    songs = [...DEFAULT_SONGS, ...saved];
-  }
-
-  updateSidebarPlaylists();
   renderSongs();
   updateStorageUI();
   bindEvents();
@@ -741,31 +733,6 @@ miniPlayer.addEventListener("click", (e) => {
   // Don't open if user clicked the play/prev/next buttons
   if (e.target.closest(".mini-btn")) return;
   setView("nowplaying");
-});// Show / hide playlist name input
-document.getElementById("add-destination")?.addEventListener("change", (e) => {
-  const wrap = document.getElementById("playlist-name-wrap");
-  if (!wrap) return;
-  if (e.target.value === "new") wrap.classList.remove("hidden");
-  else wrap.classList.add("hidden");
-});
-
-// Close dialog
-document.getElementById("add-song-close")?.addEventListener("click", () => {
-  document.getElementById("add-song-modal")?.classList.add("hidden");
-  pendingFiles = [];
-  pendingFileIndex = 0;
-});
-
-// Confirm button
-document.getElementById("confirm-add-song")?.addEventListener("click", confirmAddSong);
-
-// Click outside dialog to close
-document.getElementById("add-song-modal")?.addEventListener("click", (e) => {
-  if (e.target.id === "add-song-modal") {
-    e.target.classList.add("hidden");
-    pendingFiles = [];
-    pendingFileIndex = 0;
-  }
 });
 }
 
