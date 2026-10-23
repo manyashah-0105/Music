@@ -100,9 +100,7 @@ function getFilteredSongs() {
   } else if (currentFilter === "recent") {
     list = list.filter(s => recent.includes(s.id)).sort((a, b) => recent.indexOf(a.id) - recent.indexOf(b.id));
   }
-  else if (currentView === "custom" && currentFilter) {
-  list = list.filter(s => s.artist === currentFilter);
-}
+ 
 
   const q = searchInput.value.trim().toLowerCase();
   if (q) {
@@ -405,23 +403,30 @@ function updateTimerStatusUI() {
 
 /* ========== ADD SONGS (File Picker) ========== */
 function handleFiles(files) {
-  pendingFiles = Array.from(files).filter(f =>
-    f.type.includes("audio") || f.name.toLowerCase().endsWith(".mp3")
-  );
-  if (pendingFiles.length === 0) {
-    alert("Please select only MP3 files");
-    return;
-  }
-  pendingFileIndex = 0;
-  showAddSongDialog();
+  Array.from(files).forEach(file => {
+    if (!file.type.includes("audio")) return;
+    const url = URL.createObjectURL(file);
+    const id = Date.now() + Math.random();
+    const song = {
+      id,
+      title: file.name.replace(/\.mp3$/i, ""),
+      artist: "Added by you",
+      category: "Custom",
+      src: url,
+      album: "Local file"
+    };
+    songs.push(song);
+    userAddedSongs.push(url);
+  });
+  updateStorageUI();
+  renderSongs();
 }
 
-function showAddSongDialog() {
-  if (pendingFileIndex >= pendingFiles.length) {
-    pendingFiles = [];
-    pendingFileIndex = 0;
-    return;
-  }
+function updateStorageUI() {
+  const pct = Math.min(100, (songs.length / 25) * 100);
+  document.getElementById("storage-fill").style.width = pct + "%";
+  document.getElementById("track-count").textContent = songs.length;
+}
   /* ===== IndexedDB – save songs permanently ===== */
 function openSongDB() {
   return new Promise((resolve, reject) => {
